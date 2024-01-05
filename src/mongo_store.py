@@ -4,8 +4,9 @@ from config import JSON_DIR, CSV_DIR, mongo_connection, mongo_database
 import utils
 import gzip
 from pymongo import MongoClient
-import pymongo
 import csv
+import pandas as pd
+import data_utils
 
 
 def add_num_pages(name_file_no_num_pages, name_file_num_pages):
@@ -42,7 +43,7 @@ def add_quality_info(metadata_dict, quality_file_path):
     return metadata_dict
 
 
-def add_whole_corpus_to_mongo_db(gzipped_file_path, metadata_file_name, database, collection, quality_file_name=None):
+def add_whole_corpus_to_mongo_db(gzipped_file_path, metadata_file_name, collection, quality_file_name=None):
     # Read the gzipped file
     with gzip.open(gzipped_file_path, "rt", encoding="utf-8") as gzipped_file:
         json_content = json.load(gzipped_file)
@@ -60,8 +61,8 @@ def add_whole_corpus_to_mongo_db(gzipped_file_path, metadata_file_name, database
         quality_file_path = Path('../csv/', quality_file_name)
         metadata_dict = add_quality_info(metadata_dict, quality_file_path)
 
-    client = MongoClient('mongodb://localhost:27017/')
-    db = client[database]
+    client = MongoClient(mongo_connection)
+    db = client[mongo_database]
     collection = db[collection]
 
     for key, text_content in json_content.items():
@@ -102,13 +103,37 @@ def search_term(search_term="taturaleza"):
                 print(neighborhood.get("text", "No text available"))
                 print("\n")
 
-files_names = ["all_extracted_text_2023_corrected_all.json.gz", "all_extracted_text_2023.json.gz"]
-# gzipped_file_path = zip_data(json_file_name)
-# add_num_pages(file_name_raw, file_name)
-database = 'deeplecture'
+
+def add_corrections_to_mongo(corrections_file_name):
+    corrections_file_path = data_utils.keep_corrections_csv_clean(corrections_file_name)
+
+    corrections_file_name = corrections_file_path.name
+
+    # Read CSV file into a DataFrame
+    df = pd.read_csv(Path('../csv/', corrections_file_name), names=['Original term', 'Correct term'])
+
+    # Connect to MongoDB
+    client = MongoClient(mongo_connection)  # Replace 'your_mongodb_uri' with your MongoDB connection URI
+    db = client[mongo_database]  # Specify the database
+
+    # Create or get the corrections collection
+    corrections_collection = db['corrections']
+
+    # Convert DataFrame to a list of dictionaries (each row as a dictionary)
+    corrections_data = df.to_dict(orient='records')
+
+    # Insert the data into the MongoDB collection
+    corrections_collection.insert_many(corrections_data)
+
+
+files_names = ["all_extracted_text_2023_corrected_all.json", "all_extracted_text_2023.json"]
+gzipped_files_names = ["all_extracted_text_2023_corrected_all.json.gz", "all_extracted_text_2023.json.gz"]
+corrections_file_name = "corrections.csv"
+# gzipped_file_path = zip_data(files_names[0])
+# add_num_pages(gzipped_files_names[0], gzipped_files_names[1])
 collections = ['corrected_all_text_data', 'ocr_raw_text_data']
 metadata_file_name = 'metadata_quality.csv'
 quality_file_name = ['quality_comparison.csv', None]
-search_term()
-#add_whole_corpus_to_mongo_db(Path('../json/', files_names[0]), metadata_file_name,
-#                             database, collections[0], quality_file_name=quality_file_name[0])
+add_corrections_to_mongo(corrections_file_name)
+# search_term()
+# add_whole_corpus_to_mongo_db(Path('../json/', gzipped_files_names[0]), metadata_file_name, collections[0], quality_file_name=quality_file_name[0])

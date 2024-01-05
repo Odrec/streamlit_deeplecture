@@ -3,10 +3,10 @@ import streamlit as st
 from htmlTemplates import css
 from src import config
 from src import data_utils
-from pathlib import Path
 import os
 import subprocess
 import pymongo
+from src import control_widgets as cw
 
 
 def next_hood():
@@ -27,6 +27,7 @@ def previous_hood():
 
 
 def next_doc():
+    cw.enable_neighborhoods_widgets()
     if st.session_state.docs_count + 1 >= len(st.session_state.filtered_docs):
         st.session_state.docs_count = 0
     else:
@@ -36,49 +37,14 @@ def next_doc():
 
 
 def previous_doc():
+    cw.enable_neighborhoods_widgets()
+    st.session_state.complete_text = False
     if st.session_state.docs_count > 0:
         st.session_state.docs_count -= 1
     else:
         st.session_state.docs_count = len(st.session_state.filtered_docs) - 1
     st.session_state.hoods_count = 0
     st.session_state.doc_selectbox = None  # Reset the selectbox
-
-
-def apply_filters_to_neighborhoods():
-    # Apply metadata filters to the documents
-    st.session_state.filtered_docs = {}
-    for doc_id, doc in st.session_state.hoods_docs.items():
-        metadata = doc.get('metadata', {})
-        if (not st.session_state.selected_nacionalidad or metadata.get(
-                'nacionalidad') in st.session_state.selected_nacionalidad) and \
-                (not st.session_state.selected_entidad_territorial or metadata.get(
-                    'entidad territorial') in st.session_state.selected_entidad_territorial) and \
-                (not st.session_state.selected_periodo or metadata.get('periodo') in st.session_state.selected_periodo):
-            st.session_state.filtered_docs[doc_id] = doc
-
-    st.session_state.filters = ""
-    # Apply term filter do the documents
-    if st.session_state.filter_by_term != "":
-        filtered_by_term_dict = {}
-        for doc_id, doc in st.session_state.filtered_docs.items():
-            for hood in doc.get('neighborhoods', []):
-                if st.session_state.filter_by_term in hood['neighborhood']:
-                    if doc_id not in filtered_by_term_dict:
-                        filtered_by_term_dict[doc_id] = {'neighborhoods': []}
-                    filtered_by_term_dict[doc_id]['neighborhoods'].append(hood)
-        st.session_state.filtered_docs = filtered_by_term_dict
-        st.session_state.filters += f"**Term** - {st.session_state.filter_by_term} "
-
-    st.session_state.filtered_keys = list(st.session_state.filtered_docs.keys())
-    st.session_state.docs_count = 0
-    st.session_state.hoods_count = 0
-    if 'selected_periodo' in st.session_state and st.session_state.selected_periodo:
-        st.session_state.filters += f"**Periodos** - {' '.join(st.session_state.selected_periodo)} "
-    if 'selected_entidad_territorial' in st.session_state and st.session_state.selected_entidad_territorial:
-        st.session_state.filters += (f"**Entidad Territorial** - "
-                                     f"{' '.join(st.session_state.selected_entidad_territorial)} ")
-    if 'selected_nacionalidad' in st.session_state and st.session_state.selected_nacionalidad:
-        st.session_state.filters += f"**Nacionalidad** - " + ' '.join(st.session_state.selected_nacionalidad)
 
 
 def clear_filters():
@@ -99,9 +65,9 @@ def clear_filters_on_file_change():
 
 
 def change_selectbox_value(new_file):
+    # enable_complete_text_widgets()
     st.session_state.selected_hoods_file = new_file
-    st.session_state.selected_hoods_file_name = new_file.name
-    st.rerun()
+    # st.rerun()
 
 
 def open_pdf_button():
@@ -126,10 +92,10 @@ def display_complete_text(text_area_container, document_id):
 
     if document:
         # Access the text field you want to display
-        text_to_display = document.get("your_text_field_name", "")
+        text_to_display = document.get("text", "")
 
         # Define a unique key for the text_area widget
-        widget_key = f"hood_text_area_{document_id}"
+        widget_key = f"text_area_{document_id}"
 
         text_area_container.text_area(
             f"Complete text from document {document_id} on collection **{config.mongo_collection}**.",
@@ -156,30 +122,32 @@ def display_collection_hoods(text_area_container):
         start_index = current_hood['start_index']
         end_index = current_hood['end_index']
         edited = current_hood['edited']
-        updated = current_hood['updated']
 
-        hoods_terms = ""
+        hoods_terms = []
+        skip_next = False
         for i, term in enumerate(st.session_state.hoods_term):
+            if skip_next:
+                skip_next = False
+                continue
+
             if term == 'ww':
-                hoods_terms += st.session_state.hoods_term[i + 1] + " (ww)"
-                if i + 1 == len(st.session_state.hoods_term) - 1:
-                    break
+                if i + 1 < len(st.session_state.hoods_term):
+                    hoods_terms.append(st.session_state.hoods_term[i + 1] + " (ww)")
+                    skip_next = True
             else:
-                hoods_terms += term
-            if i != len(st.session_state.hoods_term) - 1:
-                hoods_terms += ', '
+                hoods_terms.append(term)
+        hoods_terms_string = ','.join(hoods_terms)
 
         average_words_per_page = int(number_of_words) / int(num_pages)
         aprox_page_hood = int(start_index / average_words_per_page)
         text_area_container.text_area(f'Neighborhood {st.session_state.hoods_count} from '
                                       f'{len(current_document['neighborhoods']) - 1}'
-                                      f' for **{hoods_terms}**'
+                                      f' for **{hoods_terms_string}**'
                                       f' in document **{current_document_id}** '
                                       f'(SI: {start_index} EI: {end_index} Q%: {quality_percentage: .2g}'
                                       f' #W: {int(number_of_words)} #Pags. {int(num_pages)}) '
                                       f'on collection **{st.session_state.selected_collection}**. '
-                                      f'Manually edited: **{"Yes" if edited else "No"}**. '
-                                      f'Updated in corpus **{"Yes" if updated else "No"}**. '
+                                      f'Manually edited (not yet updated in corpus): **{"Yes" if edited else "No"}**. '
                                       f'Aprox. page # the neighborhood is at: **{aprox_page_hood + 1}**.',
                                       value=text, height=300, key="hood_text_area",
                                       disabled=st.session_state.disabled)
@@ -192,10 +160,6 @@ def display_collection_hoods(text_area_container):
                                       value="",
                                       height=300)
         st.write(f'Total documents: 0. Total neighborhoods: 0. Applied filters: {st.session_state.filters}')
-
-
-def disable_widgets():
-    st.session_state.disabled = True
 
 
 def get_neighborhood_collections():
@@ -215,15 +179,18 @@ def get_documents_from_collection(collection_name):
     return documents_dict
 
 
-def main():
-    st.set_page_config(layout="wide", page_title='Explore And Manage Your Corpus', page_icon=':books:')
-    st.write(css, unsafe_allow_html=True)
-    st.header('Explore And Manage Your Corpus :books:')
-
-    metadata_quality = pd.read_csv(Path(config.CSV_DIR, 'metadata_quality.csv'))
-
+def initialize_session_variables():
     if 'disabled' not in st.session_state:
         st.session_state.disabled = False
+
+    if 'disabled_collect' not in st.session_state:
+        st.session_state.disabled_collect = False
+
+    if 'disabled_neighborhoods' not in st.session_state:
+        st.session_state.disabled_neighborhoods = False
+
+    if 'disabled_complete_text_save' not in st.session_state:
+        cw.disable_complete_text_save_widget()
 
     if 'docs_count' not in st.session_state:
         st.session_state.docs_count = 0
@@ -234,13 +201,26 @@ def main():
     if 'selected_collection' not in st.session_state:
         st.session_state.selected_collection = "No Neighborhoods"
 
-    with (st.sidebar):
+    if 'edited_documents' not in st.session_state:
+        data_utils.find_edited_neighborhoods()
+
+
+def main():
+    st.set_page_config(layout="wide", page_title='Explore And Manage Your Corpus', page_icon=':books:')
+    st.write(css, unsafe_allow_html=True)
+    st.header('Explore And Manage Your Corpus :books:')
+
+    initialize_session_variables()
+
+    with st.sidebar:
         st.write("**NEIGHBORHOOD COLLECTIONS:**")
 
         # Fetch neighborhood collections from MongoDB
         neighborhood_collections = get_neighborhood_collections()
 
         if neighborhood_collections:
+            if not st.session_state.disabled_neighborhoods:
+                cw.enable_widgets_without_collect()
             # Create a list of names for display
             if st.session_state.selected_collection is None or st.session_state.selected_collection not in neighborhood_collections:
                 st.session_state.selected_collection = neighborhood_collections[0]
@@ -254,11 +234,8 @@ def main():
                                            index=neighborhood_collections.index(st.session_state.selected_collection),
                                            disabled=st.session_state.disabled)
 
-        st.session_state.selected_collection = selected_collection
-
-        # TODO: Is this necessary??
-        if selected_collection != st.session_state.selected_collection:
-            change_selectbox_value(selected_collection)
+        if selected_collection == 'No Neighborhoods':
+            cw.disable_widgets_without_collect()
 
         st.markdown("""---""")  # Horizontal Separator
 
@@ -268,12 +245,12 @@ def main():
 
         # Input fields for generating new neighborhoods
         create_hood_term = col3_sb.text_input("Enter term(s) to collect new neighborhoods (sep ,):",
-                                              disabled=st.session_state.disabled)
+                                              disabled=st.session_state.disabled_collect)
         create_hood_size = col4_sb.number_input("Enter the size of the new neighborhoods (default 100):", value=100,
-                                                step=1, disabled=st.session_state.disabled)
+                                                step=1, disabled=st.session_state.disabled_collect)
         # Generate New Neighborhoods Button
-        collect_neighborhoods_button = st.button("Collect Neighborhoods", on_click=disable_widgets,
-                                                 disabled=st.session_state.disabled)
+        collect_neighborhoods_button = st.button("Collect Neighborhoods", on_click=cw.disable_widgets_without_collect,
+                                                 disabled=st.session_state.disabled_collect)
         if collect_neighborhoods_button:
             if create_hood_term == "":
                 st.warning("Please specify a term to collect the neighborhoods.")
@@ -283,12 +260,14 @@ def main():
                 sequences = create_hood_term.split(',')
                 with st.spinner(f'Collecting neighborhoods for terms "{create_hood_term}". '
                                 f'This might take a while. Please wait...'):
-                    data_utils.collect_neighborhoods_mongo_parallel(sequences_list=sequences, size=create_hood_size)
+                    collection_name = data_utils.collect_neighborhoods_mongo_parallel(sequences_list=sequences,
+                                                                                      size=create_hood_size)
                     st.success("Neighborhoods collected successfully.")
-                    st.session_state.disabled = False
+                    cw.enable_widgets_without_collect()
                     # In case the same neighborhoods that are being displayed are regenerated
                     st.session_state.docs_count = 0
                     st.session_state.hoods_count = 0
+                    st.session_state.selected_collection = collection_name
                     st.rerun()
 
         st.markdown("""---""")  # Horizontal Separator
@@ -302,19 +281,20 @@ def main():
         unique_nacionalidad_values = set()
         unique_entidad_territorial_values = set()
 
-        if 'hoods_docs' in st.session_state:
-            for doc_id, doc in st.session_state.hoods_docs.items():
+        if 'hoods_docs' not in st.session_state and selected_collection:
+            # Retrieve documents from MongoDB
+            st.session_state.hoods_docs = get_documents_from_collection(selected_collection)
+        if selected_collection:
+            for doc in st.session_state.hoods_docs.values():
                 metadata = doc.get('metadata', {})
-                unique_periodo_values.update(metadata.get('periodo', []))
-                unique_nacionalidad_values.update(metadata.get('nacionalidad', []))
-                unique_entidad_territorial_values.update(metadata.get('entidad territorial', []))
+                unique_periodo_values.add(metadata.get('periodo', ''))
+                unique_nacionalidad_values.add(metadata.get('nacionalidad', ''))
+                unique_entidad_territorial_values.add(metadata.get('entidad territorial', ''))
 
         # Add multiselect filters
         st.session_state.selected_periodo = st.multiselect("Select Periodo",
                                                            sorted(unique_periodo_values),
                                                            key="filter_periodo", disabled=st.session_state.disabled)
-        # Replace NaN with "None" in the 'nacionalidad' column
-        metadata_quality['nacionalidad'] = metadata_quality['nacionalidad'].fillna("Sin nacionalidad")
         st.session_state.selected_nacionalidad = st.multiselect("Select Nacionalidad",
                                                                 sorted(unique_nacionalidad_values),
                                                                 disabled=st.session_state.disabled)
@@ -328,12 +308,12 @@ def main():
         col1_sb, col2_sb = st.columns([1, 1])
 
         if col1_sb.button("Apply Filters", disabled=st.session_state.disabled):
-            apply_filters_to_neighborhoods()
+            data_utils.apply_filters_to_neighborhoods()
         # Clear Filters Button
         if col2_sb.button("Clear Filters", disabled=st.session_state.disabled):
             clear_filters()
 
-        if not st.session_state.filters and selected_collection and selected_collection != 'No Neighborhoods':
+        if not st.session_state.filters and selected_collection and selected_collection != 'No Neighborhoods' and not st.session_state.disabled_neighborhoods:
             # Retrieve documents from MongoDB
             st.session_state.hoods_docs = get_documents_from_collection(selected_collection)
 
@@ -344,62 +324,67 @@ def main():
             st.session_state.hoods_term = [term.strip() for term in selected_collection.split('_')[1:]]
 
             st.session_state.filtered_keys = list(st.session_state.filtered_docs.keys())
+            cw.enable_all_widgets()  # In case they were disabled for any reason
 
         if 'hoods_count' not in st.session_state:
             st.session_state.hoods_count = 0
 
-    col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 1, 1, 1, 1])
-
-    with col1:
-        if st.button("⏮️ Previous Neighborhood", on_click=previous_hood, disabled=st.session_state.disabled):
-            pass
-
-    with col2:
-        if st.button("Next Neighborhood ⏭️", on_click=next_hood, disabled=st.session_state.disabled):
-            pass
-
-    with col3:
-        if st.button("⏮️ Previous Document", on_click=previous_doc, disabled=st.session_state.disabled):
-            pass
-
-    with col4:
-        if st.button("Next Document ⏭️", on_click=next_doc, disabled=st.session_state.disabled):
-            pass
-
-    with col5:
-        if 'filtered_keys' in st.session_state:
-            selectbox_doc = st.selectbox(label='Choose a document to navigate to',
-                                         options=st.session_state.filtered_keys, key='doc_selectbox', index=None,
-                                         disabled=st.session_state.disabled)
-        else:
-            selectbox_doc = st.selectbox(label='Choose a document to navigate to', key='doc_selectbox', options=[],
-                                         disabled=st.session_state.disabled)
-
-        if selectbox_doc and selectbox_doc != st.session_state.previous_selectbox_value:
-            # TODO: Check behavior of dropbox after applying corrections.
-            st.session_state.docs_count = st.session_state.filtered_keys.index(selectbox_doc)
-            st.session_state.hoods_count = 0
-            # Save the value to control when value changes in the condition
-            st.session_state.previous_selectbox_value = selectbox_doc
-
-    text_area_container = st.empty()
-    display_collection_hoods(text_area_container)
-
     tab1, tab2 = st.tabs(["Edition", "Coocurrences", ])
 
     with tab1:
+
+        col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 1, 1, 1, 1])
+
+        with col1:
+            if st.button("⏮️ Previous Neighborhood", on_click=previous_hood,
+                         disabled=st.session_state.disabled_neighborhoods):
+                pass
+
+        with col2:
+            if st.button("Next Neighborhood ⏭️", on_click=next_hood, disabled=st.session_state.disabled_neighborhoods):
+                pass
+
+        with col3:
+            if st.button("⏮️ Previous Document", on_click=previous_doc, disabled=st.session_state.disabled):
+                pass
+
+        with col4:
+            if st.button("Next Document ⏭️", on_click=next_doc, disabled=st.session_state.disabled):
+                pass
+
+        with col5:
+            if 'filtered_keys' in st.session_state:
+                selectbox_doc = st.selectbox(label='Choose a document to navigate to',
+                                             options=st.session_state.filtered_keys, key='doc_selectbox', index=None,
+                                             disabled=st.session_state.disabled)
+            else:
+                selectbox_doc = st.selectbox(label='Choose a document to navigate to', key='doc_selectbox', options=[],
+                                             disabled=st.session_state.disabled)
+
+            if selectbox_doc and selectbox_doc != st.session_state.previous_selectbox_value:
+                cw.enable_neighborhoods_widgets()
+                st.session_state.docs_count = st.session_state.filtered_keys.index(selectbox_doc)
+                st.session_state.hoods_count = 0
+                # Save the value to control when value changes in the condition
+                st.session_state.previous_selectbox_value = selectbox_doc
+                st.rerun()
+
+        # If the textarea is not showing a complete text right now or there are no neighborhood collection chosen yet
+        text_area_container = st.empty()
+        if not st.session_state.disabled_neighborhoods or 'filtered_keys' not in st.session_state:
+            cw.enable_all_widgets()
+            display_collection_hoods(text_area_container)
+            cw.disable_complete_text_save_widget()
+
         col6, col7, col8, st.session_state.col9 = st.columns([1, 1, 1, 1])
 
-        corrections_file_name = 'corrections.csv'
-        corrections_file_path = data_utils.keep_corrections_csv_clean(corrections_file_name)
-
-        # Read CSV without column names
-        corrections_df = pd.read_csv(corrections_file_path, header=None)
-
-        # Add column names
-        corrections_df.columns = ["Original term", "Corrected term"]
-
         with col7:
+            corrections_collection_name = 'corrections'
+
+            client = pymongo.MongoClient(config.mongo_connection)
+            database = client[config.mongo_database]
+            corrections_collection = database[corrections_collection_name]
+
             st.subheader("Add/Delete entries")
 
             # Display label for the dataframe
@@ -407,75 +392,63 @@ def main():
 
             # Input fields for original and corrected terms
             original_term = st.text_input("Original Term:", disabled=st.session_state.disabled)
-            corrected_term = st.text_input("Corrected Term:", disabled=st.session_state.disabled)
+            corrected_term = st.text_input("Correct Term:", disabled=st.session_state.disabled)
 
             # Button to add entry
             if st.button("Add Entry", disabled=st.session_state.disabled):
-                if original_term in corrections_df["Original term"].values:
-                    st.warning(f"Entry for term '{original_term}' already exists.")
-                elif len(original_term) == 0 or original_term.isspace():
-                    st.warning("You can't add an empty original term.")
-                else:
-                    new_entry = {"Original term": original_term, "Corrected term": corrected_term}
-                    corrections_df = corrections_df._append(new_entry, ignore_index=True)
-                    # Save the updated DataFrame to CSV
-                    corrections_df.to_csv(corrections_file_path, index=False, header=False)
-                    st.success("Entry added successfully!")
+                data_utils.add_corrections_entry_to_mongo(original_term, corrected_term, corrections_collection)
 
             # Dropdown to select the entry to delete
             selected_entry = st.selectbox("**Select entry to delete from the corrections list**",
-                                          corrections_df["Original term"].tolist(), index=None,
-                                          key="delete_dropdown", disabled=st.session_state.disabled)
+                                          [entry["Original term"] for entry in corrections_collection.find({})],
+                                          index=None,
+                                          key="delete_dropdown",
+                                          disabled=st.session_state.disabled)
 
             # Button to delete entry
             delete_entry_button = st.button("Delete Entry", disabled=st.session_state.disabled)
             if delete_entry_button:
-                if selected_entry:
-                    corrections_df = corrections_df[corrections_df["Original term"] != selected_entry]
-                    # Save the updated DataFrame to CSV
-                    corrections_df.to_csv(corrections_file_path, index=False, header=False)
-                    st.success("Entry deleted successfully!")
-                else:
-                    st.warning("Choose a valid entry from the dropdown.")
+                data_utils.delete_correction_entry_from_mongo(selected_entry, corrections_collection)
 
         with col8:
-            # Button to display the entire text of the current document
-            display_complete_text_button = st.button("Display complete text", disabled=st.session_state.disabled)
-            if display_complete_text_button:
-                display_complete_text(text_area_container, st.session_state.filtered_keys[st.session_state.docs_count])
+
+            if 'filtered_keys' in st.session_state:
+                # Button to display the entire text of the current document
+                file_to_display = st.session_state.filtered_keys[st.session_state.docs_count]
+                display_complete_text_button = st.button(f"Display text from {file_to_display}",
+                                                         disabled=st.session_state.disabled)
+                if display_complete_text_button or st.session_state.disabled_neighborhoods:
+                    display_complete_text(text_area_container, file_to_display)
+                    cw.disable_neighborhoods_widgets()
+                    cw.enable_complete_text_save_widget()
+                    if display_complete_text_button:
+                        st.rerun()
+
+                if st.button(f"Save Text from {file_to_display}",
+                             disabled=st.session_state.disabled_complete_text_save):
+                    # Call the save function
+                    data_utils.save_complete_text_to_mongo(file_to_display)
 
         with st.session_state.col9:
 
             # Show success message if neighborhood was saved successfully
             if 'hood_saved' in st.session_state:
-                if st.session_state.hood_saved:
+                if st.session_state.hood_saved is True:
                     st.success(f"Neighborhood {st.session_state.hoods_count} from file "
                                f"{st.session_state.filtered_keys[st.session_state.docs_count]} saved successfully.")
-                    st.session_state.hood_saved = False
-            else:
-                st.session_state.hood_saved = False
+                elif isinstance(st.session_state.hood_saved, str):
+                    st.warning(st.session_state.hood_saved)
+
+            st.session_state.hood_saved = False
 
             # Check if "Save" button is clicked and save changes
-            st.button("Save changes in neighborhood", disabled=st.session_state.disabled,
+            st.button("Save changes in neighborhood", disabled=st.session_state.disabled_neighborhoods,
                       on_click=data_utils.update_neighborhood_in_collection)
 
             # Add a button to open the PDF
             if 'filtered_keys' in st.session_state:
                 st.button(f"Open PDF for file {st.session_state.filtered_keys[st.session_state.docs_count]}",
                           on_click=open_pdf_button, disabled=st.session_state.disabled)
-
-                not_updated_hoods_dict = {}
-
-                for file, neighborhoods in st.session_state.hoods_docs.items():
-                    for i, neighborhood in enumerate(neighborhoods['neighborhoods']):
-                        if neighborhood['edited'] and not neighborhood['updated']:
-                            if file in not_updated_hoods_dict:
-                                not_updated_hoods_dict[file]['Neighborhoods'] += f', {i}'
-                            else:
-                                not_updated_hoods_dict[file] = {'File': file, 'Neighborhoods': str(i)}
-
-                # Convert the dictionary values to a list
-                not_updated_hoods_list = list(not_updated_hoods_dict.values())
 
                 if 'updated' in st.session_state:
                     if st.session_state.updated:
@@ -486,41 +459,44 @@ def main():
                     st.session_state.updated = False
 
                 # Only display the not updated files if there have been editions saved
-                if not_updated_hoods_list:
+                if st.session_state.edited_documents:
                     st.write("**Edited neighborhoods list (not updated in corpus)**")
 
-                    not_updated_hoods_df = pd.DataFrame(not_updated_hoods_list)
+                    not_updated_hoods_df = pd.DataFrame(st.session_state.edited_documents)
 
                     # Display table
                     st.dataframe(not_updated_hoods_df, height=300)
 
                     update_neighborhoods_in_corpus_button = st.button(f"Update edited neighborhoods in corpus",
-                                                                      on_click=disable_widgets,
-                                                                      disabled=st.session_state.disabled)
+                                                                      on_click=cw.disable_all_widgets,
+                                                                      disabled=st.session_state.disabled_neighborhoods)
 
                     if update_neighborhoods_in_corpus_button:
-                        data_utils.save_edited_neighborhoods_to_corpus(st.session_state.complete_corpus_file_name,
-                                                                       st.session_state.selected_hoods_file_name)
+                        data_utils.save_edited_neighborhoods_to_corpus_mongo(st.session_state.selected_collection)
                         st.session_state.updated = True
-                        st.session_state.disabled = False
+                        cw.enable_all_widgets()
                         st.rerun()
 
         with col6:
 
             st.subheader("Corrections list")
 
+            # Retrieve corrections from MongoDB
+            corrections_df = data_utils.get_corrections_from_mongo(corrections_collection_name)
+
             # Display table below the textarea
             st.dataframe(corrections_df, height=300)
 
             apply_corrections_button = st.button("Apply corrections to the entire corpus and neighborhoods",
-                                                 key="apply_corrections_button", on_click=disable_widgets,
+                                                 key="apply_corrections_button", on_click=cw.disable_all_widgets,
                                                  disabled=st.session_state.disabled)
 
             if apply_corrections_button:
                 with st.spinner("Applying corrections. Please wait..."):
-                    data_utils.apply_corrections_all_collections(corrections_df, neighborhood_collections)
+                    data_utils.apply_corrections_all_collections_mongo_parallel(corrections_df,
+                                                                                neighborhood_collections)
                     st.success("Corrections applied successfully.")
-                    st.session_state.disabled = False
+                    cw.enable_all_widgets()
                     st.rerun()
 
 
