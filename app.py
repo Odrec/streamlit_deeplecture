@@ -9,6 +9,20 @@ import pymongo
 from src import control_widgets as cw
 
 
+def initialize_session_document_variables(selected_collection):
+    # Retrieve documents from MongoDB
+    st.session_state.hoods_docs = get_documents_from_collection(selected_collection)
+
+    # Filter out keys with empty values
+    st.session_state.hoods_docs = dict(sorted(st.session_state.hoods_docs.items(), key=lambda x: x[0]))
+    st.session_state.filtered_docs = st.session_state.hoods_docs.copy()
+
+    st.session_state.hoods_term = [term.strip() for term in selected_collection.split('_')[1:]]
+
+    st.session_state.filtered_keys = list(st.session_state.filtered_docs.keys())
+    cw.enable_all_widgets()  # In case they were disabled for any reason
+
+
 def next_hood():
     if st.session_state.hoods_count + 1 >= len(
             st.session_state.hoods_docs[st.session_state.filtered_keys[st.session_state.docs_count]]['neighborhoods']):
@@ -108,7 +122,7 @@ def display_complete_text(text_area_container, document_id):
         text_area_container.text(f"Document {document_id} not found in collection {config.mongo_collection}.")
 
 
-def display_collection_hoods(text_area_container):
+def display_collection_hoods(text_area_container, selected_collection):
     if 'filtered_keys' in st.session_state:
         current_document_id = st.session_state.filtered_keys[st.session_state.docs_count]
         current_document = st.session_state.filtered_docs[current_document_id]
@@ -146,7 +160,7 @@ def display_collection_hoods(text_area_container):
                                       f' in document **{current_document_id}** '
                                       f'(SI: {start_index} EI: {end_index} Q%: {quality_percentage: .2g}'
                                       f' #W: {int(number_of_words)} #Pags. {int(num_pages)}) '
-                                      f'on collection **{st.session_state.selected_collection}**. '
+                                      f'on collection **{selected_collection}**. '
                                       f'Manually edited (not yet updated in corpus): **{"Yes" if edited else "No"}**. '
                                       f'Aprox. page # the neighborhood is at: **{aprox_page_hood + 1}**.',
                                       value=text, height=300, key="hood_text_area",
@@ -234,6 +248,9 @@ def main():
                                            index=neighborhood_collections.index(st.session_state.selected_collection),
                                            disabled=st.session_state.disabled)
 
+        # Necessary for callback functions outside main
+        st.session_state.selected_collection = selected_collection
+
         if selected_collection == 'No Neighborhoods':
             cw.disable_widgets_without_collect()
 
@@ -314,17 +331,7 @@ def main():
             clear_filters()
 
         if not st.session_state.filters and selected_collection and selected_collection != 'No Neighborhoods' and not st.session_state.disabled_neighborhoods:
-            # Retrieve documents from MongoDB
-            st.session_state.hoods_docs = get_documents_from_collection(selected_collection)
-
-            # Filter out keys with empty values
-            st.session_state.hoods_docs = dict(sorted(st.session_state.hoods_docs.items(), key=lambda x: x[0]))
-            st.session_state.filtered_docs = st.session_state.hoods_docs.copy()
-
-            st.session_state.hoods_term = [term.strip() for term in selected_collection.split('_')[1:]]
-
-            st.session_state.filtered_keys = list(st.session_state.filtered_docs.keys())
-            cw.enable_all_widgets()  # In case they were disabled for any reason
+            initialize_session_document_variables(selected_collection)
 
         if 'hoods_count' not in st.session_state:
             st.session_state.hoods_count = 0
@@ -373,17 +380,12 @@ def main():
         text_area_container = st.empty()
         if not st.session_state.disabled_neighborhoods or 'filtered_keys' not in st.session_state:
             cw.enable_all_widgets()
-            display_collection_hoods(text_area_container)
+            display_collection_hoods(text_area_container, selected_collection)
             cw.disable_complete_text_save_widget()
 
         col6, col7, col8, st.session_state.col9 = st.columns([1, 1, 1, 1])
 
         with col7:
-            corrections_collection_name = 'corrections'
-
-            client = pymongo.MongoClient(config.mongo_connection)
-            database = client[config.mongo_database]
-            corrections_collection = database[corrections_collection_name]
 
             st.subheader("Add/Delete entries")
 
@@ -394,9 +396,14 @@ def main():
             original_term = st.text_input("Original Term:", disabled=st.session_state.disabled)
             corrected_term = st.text_input("Correct Term:", disabled=st.session_state.disabled)
 
+            corrections_collection_name = 'corrections'
             # Button to add entry
             if st.button("Add Entry", disabled=st.session_state.disabled):
-                data_utils.add_corrections_entry_to_mongo(original_term, corrected_term, corrections_collection)
+                data_utils.add_correction_entry_to_mongo(original_term, corrected_term, corrections_collection_name)
+
+            client = pymongo.MongoClient(config.mongo_connection)
+            database = client[config.mongo_database]
+            corrections_collection = database[corrections_collection_name]
 
             # Dropdown to select the entry to delete
             selected_entry = st.selectbox("**Select entry to delete from the corrections list**",
@@ -408,7 +415,7 @@ def main():
             # Button to delete entry
             delete_entry_button = st.button("Delete Entry", disabled=st.session_state.disabled)
             if delete_entry_button:
-                data_utils.delete_correction_entry_from_mongo(selected_entry, corrections_collection)
+                data_utils.delete_correction_entry_from_mongo(selected_entry, corrections_collection_name)
 
         with col8:
 
@@ -493,9 +500,13 @@ def main():
 
             if apply_corrections_button:
                 with st.spinner("Applying corrections. Please wait..."):
-                    data_utils.apply_corrections_all_collections_mongo_parallel(corrections_df,
-                                                                                neighborhood_collections)
+                    data_utils.apply_corrections_all_collections_mongo_parallel(corrections_df)
                     st.success("Corrections applied successfully.")
+
+                    # Recollect all neighborhoods and apply filters
+                    initialize_session_document_variables(selected_collection)
+                    data_utils.apply_filters_to_neighborhoods()
+
                     cw.enable_all_widgets()
                     st.rerun()
 
