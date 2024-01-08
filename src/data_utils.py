@@ -1,6 +1,6 @@
 import nltk
 from pathlib import Path
-from src.config import JSON_DIR, NEIGHBORHOODS_DIR, CSV_DIR, mongo_connection, mongo_database, mongo_collection
+from src.config import mongo_connection, mongo_database, mongo_collection, corrections_collection_name
 import src.config as config
 import pandas as pd
 import src.control_widgets as cw
@@ -215,7 +215,7 @@ def collect_neighborhoods_mongo_parallel(sequences_list, size, document_ids=None
                 # Extract sequences_list and size from one of the documents
                 query = {"_id": {"$in": [doc_id for doc_id in document_ids]}}
                 collection_info = neighborhoods_collection.find_one(query,
-                                                                {'hoods_sequences': 1, 'hoods_size': 1})
+                                                                    {'hoods_sequences': 1, 'hoods_size': 1})
 
                 if collection_info:
                     current_sequences_list = collection_info.get('hoods_sequences', [])
@@ -264,7 +264,7 @@ def collect_neighborhoods_mongo_parallel(sequences_list, size, document_ids=None
             neighborhoods = {}
 
             for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures),
-                               desc="Processing Documents"):
+                               desc=f"Processing Documents for collection {neighborhood_collection_name}"):
                 key, result, document_metadata, unique_terms = future.result()
                 neighborhoods[key] = {
                     'neighborhoods': result,
@@ -346,7 +346,7 @@ def update_neighborhood_in_collection():
         neighborhood_collection.update_one(update_query, update_operation)
         hoods_docs_index = st.session_state.hoods_docs[current_document_id]['neighborhoods'].index(
             st.session_state.filtered_docs[current_document_id]['neighborhoods'][current_neighborhood_index])
-        st.session_state.hoods_docs[current_document_id]['neighborhoods'][hoods_docs_index]['neighborhood'] =\
+        st.session_state.hoods_docs[current_document_id]['neighborhoods'][hoods_docs_index]['neighborhood'] = \
             edited_text
         st.session_state.hoods_docs[current_document_id]['neighborhoods'][hoods_docs_index]['edited'] = True
         st.session_state.filtered_docs[current_document_id]['neighborhoods'][current_neighborhood_index][
@@ -448,7 +448,7 @@ def find_edited_neighborhoods():
                         break  # Stop searching after finding the first edited neighborhood
 
 
-def add_correction_entry_to_mongo(original_term, corrected_term, corrections_collection_name):
+def add_correction_entry_to_mongo(original_term, corrected_term):
     client = MongoClient(mongo_connection)
     db = client[mongo_database]
     corrections_collection = db[corrections_collection_name]
@@ -467,7 +467,7 @@ def add_correction_entry_to_mongo(original_term, corrected_term, corrections_col
     client.close()
 
 
-def delete_correction_entry_from_mongo(selected_entry, corrections_collection_name):
+def delete_correction_entry_from_mongo(selected_entry):
     client = MongoClient(mongo_connection)
     db = client[mongo_database]
     corrections_collection = db[corrections_collection_name]
@@ -481,7 +481,7 @@ def delete_correction_entry_from_mongo(selected_entry, corrections_collection_na
     client.close()
 
 
-def get_corrections_from_mongo(corrections_collection_name):
+def get_corrections_from_mongo():
     client = MongoClient(mongo_connection)
     db = client[mongo_database]
     corrections_collection = db[corrections_collection_name]
@@ -566,5 +566,39 @@ def save_complete_text_to_mongo(document_id):
         st.error(f"Document {document_id} not found in collection {config.mongo_collection}.")
 
     # Recollect and insert the neighborhoods of the saved document
+    st.info('Recollecting neighborhoods from edited documents.')
     collect_neighborhoods_mongo_parallel(sequences_list=[], size=0, document_ids=[document_id], all_collections=True)
+    st.success('Finished recollecting neighborhoods successfully.')
 
+
+def get_neighborhood_collections():
+    client = MongoClient(config.mongo_connection)
+    db = client[config.mongo_database]
+    collection_names = db.list_collection_names()
+    neighborhood_collections = [name for name in collection_names if name.startswith("neighborhoods_")]
+    return neighborhood_collections
+
+
+def get_documents_from_collection(collection_name):
+    client = MongoClient(config.mongo_connection)
+    db = client[config.mongo_database]
+    collection = db[collection_name]
+    documents_content = list(collection.find({}))
+    documents_dict = {str(doc['_id']): doc for doc in documents_content}
+    return documents_dict
+
+
+def get_corrections_from_collection():
+    client = MongoClient(config.mongo_connection)
+    database = client[config.mongo_database]
+    corrections_collection = database[corrections_collection_name]
+    return corrections_collection
+
+
+def get_complete_text_from_document(document_id):
+    client = MongoClient(config.mongo_connection)
+    db = client[config.mongo_database]
+    documents_collection = db[config.mongo_collection]
+    # Fetch the document from MongoDB
+    document = documents_collection.find_one({"_id": document_id})
+    return document

@@ -129,11 +129,11 @@ def add_corrections_to_mongo(corrections_file_name):
 files_names = ["all_extracted_text_2023_corrected_all.json", "all_extracted_text_2023.json"]
 gzipped_files_names = ["all_extracted_text_2023_corrected_all.json.gz", "all_extracted_text_2023.json.gz"]
 corrections_file_name = "corrections.csv"
-# gzipped_file_path = zip_data(files_names[0])
-# add_num_pages(gzipped_files_names[0], gzipped_files_names[1])
+#gzipped_file_path = zip_data(files_names[0])
+#add_num_pages(gzipped_files_names[0], gzipped_files_names[1])
 collections = ['corrected_all_text_data', 'ocr_raw_text_data']
 metadata_file_name = 'metadata_quality.csv'
 quality_file_name = ['quality_comparison.csv', None]
-add_corrections_to_mongo(corrections_file_name)
+#add_corrections_to_mongo(corrections_file_name)
 # search_term()
-# add_whole_corpus_to_mongo_db(Path('../json/', gzipped_files_names[0]), metadata_file_name, collections[0], quality_file_name=quality_file_name[0])
+add_whole_corpus_to_mongo_db(Path('../json/', gzipped_files_names[0]), metadata_file_name, collections[0], quality_file_name=quality_file_name[0])
