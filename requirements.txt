@@ -10,9 +10,12 @@ charset-normalizer==3.3.2
 click==8.1.7
 cloudpathlib==0.16.0
 confection==0.1.4
+cramjam==2.7.0
 cymem==2.0.8
 dnspython==2.4.2
 es-core-news-sm @ https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.7.0/es_core_news_sm-3.7.0-py3-none-any.whl#sha256=61e6e5530941f5880166855f09f60d7e6ba79ec1e8e45f96244bdb1eb169eb1d
+fastparquet==2023.10.1
+fsspec==2023.12.2
 gitdb==4.0.11
 GitPython==3.1.40
 idna==3.6
