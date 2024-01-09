@@ -423,6 +423,12 @@ def filters_interface_controls(selected_collection):
 
 
 def sidebar_interface_controls():
+    """
+    Manages the interface controls in the Streamlit sidebar.
+
+    Returns:
+    - selected_collection (str): The selected neighborhood collection.
+    """
     with st.sidebar:
         selected_collection = neighborhood_collections_interface_controls()
 
@@ -438,6 +444,9 @@ def sidebar_interface_controls():
 
 
 def neighborhoods_navigation_interface_controls():
+    """
+    Manages the interface controls for navigating through neighborhoods and documents.
+    """
     col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 1, 1, 1, 1])
 
     with col1:
@@ -477,6 +486,9 @@ def neighborhoods_navigation_interface_controls():
 
 
 def general_corrections_interface_controls():
+    """
+    Manages the interface controls for adding and deleting entries in the corrections list.
+    """
     st.subheader("Add/Delete entries")
 
     # Display label for the dataframe
@@ -506,6 +518,12 @@ def general_corrections_interface_controls():
 
 
 def complete_text_interface_controls(text_area_container):
+    """
+    Manages the interface controls for displaying and saving the entire text of the current document.
+
+    Parameters:
+    - text_area_container (streamlit.container): The container to display the text area.
+    """
     # Check if there are documents from a collection present
     if 'filtered_keys' in st.session_state:
         # Button to display the entire text of the current document
@@ -531,6 +549,12 @@ def complete_text_interface_controls(text_area_container):
 
 
 def neighborhoods_editing_interface_controls(selected_collection):
+    """
+    Manages the interface controls for editing neighborhoods, saving changes, and updating the corpus.
+
+    Parameters:
+    - selected_collection (str): The name of the selected neighborhood collection.
+    """
     with st.session_state.col9:
         # Show success message if neighborhood was saved successfully
         if 'hood_saved' in st.session_state:
@@ -601,6 +625,12 @@ def neighborhoods_editing_interface_controls(selected_collection):
 
 
 def edition_interface(selected_collection):
+    """
+    Manages the interface controls for displaying neighborhoods, applying corrections, and editing neighborhoods.
+
+    Parameters:
+    - selected_collection (str): The name of the selected neighborhood collection.
+    """
     neighborhoods_navigation_interface_controls()
 
     text_area_container = st.empty()

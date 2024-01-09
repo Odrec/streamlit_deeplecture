@@ -28,11 +28,11 @@ def keep_corrections_csv_clean(corrections_file_name='corrections.csv'):
     """
     Keep the corrections CSV file clean by removing duplicate and invalid entries.
 
-    Args:
+    Parameters:
         corrections_file_name (str): Name of the corrections CSV file.
 
     Returns:
-        None
+        Path: Path to the corrections CSV file.
     """
     corrections_file_path = Path('../csv/', corrections_file_name)
 
@@ -63,7 +63,11 @@ def keep_corrections_csv_clean(corrections_file_name='corrections.csv'):
 
 
 def apply_filters_to_neighborhoods():
+    """
+    Apply metadata and term filters to the documents and update the session state accordingly.
+    """
     cw.enable_neighborhoods_widgets()
+
     # Apply metadata filters to the documents
     st.session_state.filtered_docs = {}
     for doc_id, doc in st.session_state.hoods_docs.items():
@@ -76,6 +80,7 @@ def apply_filters_to_neighborhoods():
             st.session_state.filtered_docs[doc_id] = doc
 
     st.session_state.filters = ""
+
     # Apply term filter do the documents
     if st.session_state.filter_by_term != "":
         filtered_by_term_dict = {}
@@ -95,6 +100,7 @@ def apply_filters_to_neighborhoods():
     st.session_state.filtered_keys = list(st.session_state.filtered_docs.keys())
     st.session_state.docs_count = 0
     st.session_state.hoods_count = 0
+
     if 'selected_periodo' in st.session_state and st.session_state.selected_periodo:
         st.session_state.filters += f"**Periodos** - {' '.join(st.session_state.selected_periodo)} "
     if 'selected_entidad_territorial' in st.session_state and st.session_state.selected_entidad_territorial:
@@ -105,6 +111,18 @@ def apply_filters_to_neighborhoods():
 
 
 def extract_neighborhoods(key, value, sequences_list, size):
+    """
+    Extract neighborhoods from a document based on given sequences.
+
+    Parameters:
+    - key (str): Document key.
+    - value (dict): Document content.
+    - sequences_list (list): List of sequences to search for neighborhoods.
+    - size (int): The size of neighborhoods.
+
+    Returns:
+    - tuple: Document key, extracted neighborhoods, metadata, and unique terms.
+    """
     # Tokenize the content
     tokenized_content = tokenize(value['text'])
     unique_terms = set()
@@ -139,11 +157,30 @@ def extract_neighborhoods(key, value, sequences_list, size):
 
 
 def process_document(document, sequences_list, size):
+    """
+    Process a document, extracting neighborhoods based on given sequences.
+
+    Parameters:
+    - document (dict): The document to process.
+    - sequences_list (list): List of sequences to search for neighborhoods.
+    - size (int): The size of neighborhoods.
+
+    Returns:
+    - tuple: Extracted neighborhoods and related information.
+    """
     key, value = document['_id'], document
     return extract_neighborhoods(key, value, sequences_list, size)
 
 
 def insert_neighborhoods_to_mongo(neighborhoods, neighborhood_collection_name, document_ids=None):
+    """
+    Insert or update neighborhoods into the MongoDB collection.
+
+    Parameters:
+    - neighborhoods (dict): Extracted neighborhoods.
+    - neighborhood_collection_name (str): Name of the MongoDB collection to store neighborhoods.
+    - document_ids (list): List of document IDs to update.
+    """
     client = MongoClient(mongo_connection)
     db = client[mongo_database]
 
@@ -192,7 +229,7 @@ def collect_neighborhoods_mongo_parallel(sequences_list, size, document_ids=None
                                        Defaults to False.
 
     Returns:
-    - list: List of processed collections.
+    - list: List of processed collections or None if document was not found in any collection.
     """
     import time
     start_time = time.time()  # Record start time
@@ -248,9 +285,9 @@ def collect_neighborhoods_mongo_parallel(sequences_list, size, document_ids=None
                 documents_content.append(
                     documents_collection.find_one({'_id': document_id},
                                                   {'_id': 1, 'text': 1, 'metadata': 1}))
-            if info:
-                st.info(f"Collecting neighborhoods for document {document_id} "
-                        f"on collection {neighborhood_collection_name}...")
+                if info:
+                    st.info(f"Collecting neighborhoods for document {document_id} "
+                            f"on collection {neighborhood_collection_name}...")
         else:
             documents_content = list(documents_collection.find({}, {'_id': 1, 'text': 1, 'metadata': 1}))
             st.info("Collecting neighborhoods...")
@@ -292,6 +329,9 @@ def collect_neighborhoods_mongo_parallel(sequences_list, size, document_ids=None
 
 
 def update_neighborhood_in_collection():
+    """
+    Update the edited neighborhood in the MongoDB collection.
+    """
     collection_name = st.session_state.selected_collection
     current_document_id = st.session_state.filtered_keys[st.session_state.docs_count]
     current_neighborhood_index = st.session_state.hoods_count
@@ -363,6 +403,12 @@ def update_neighborhood_in_collection():
 
 
 def save_edited_neighborhoods_to_corpus_mongo(neighborhoods_collection_name):
+    """
+    Save edited neighborhoods to the corpus collection in MongoDB.
+
+    Parameters:
+    - neighborhoods_collection_name (str): Name of the neighborhoods collection.
+    """
     # Connect to MongoDB
     client = MongoClient(config.mongo_connection)
     db = client[config.mongo_database]
@@ -412,6 +458,9 @@ def save_edited_neighborhoods_to_corpus_mongo(neighborhoods_collection_name):
 
 
 def find_edited_neighborhoods():
+    """
+    Finds and populates the edited_documents session state variable with information about edited neighborhoods.
+    """
     # Connect to MongoDB
     client = MongoClient(config.mongo_connection)
     db = client[config.mongo_database]
@@ -449,6 +498,13 @@ def find_edited_neighborhoods():
 
 
 def add_correction_entry_to_mongo(original_term, corrected_term):
+    """
+    Adds a new entry to the corrections collection in MongoDB.
+
+    Parameters:
+    - original_term (str): The original term to be corrected.
+    - corrected_term (str): The corrected term.
+    """
     client = MongoClient(mongo_connection)
     db = client[mongo_database]
     corrections_collection = db[corrections_collection_name]
@@ -468,6 +524,12 @@ def add_correction_entry_to_mongo(original_term, corrected_term):
 
 
 def delete_correction_entry_from_mongo(selected_entry):
+    """
+    Deletes a selected entry from the corrections collection in MongoDB.
+
+    Parameters:
+    - selected_entry (str): The original term of the entry to be deleted.
+    """
     client = MongoClient(mongo_connection)
     db = client[mongo_database]
     corrections_collection = db[corrections_collection_name]
@@ -482,6 +544,12 @@ def delete_correction_entry_from_mongo(selected_entry):
 
 
 def get_corrections_from_mongo():
+    """
+    Retrieves corrections from the corrections collection in MongoDB.
+
+    Returns:
+    - pd.DataFrame: DataFrame containing corrections data.
+    """
     client = MongoClient(mongo_connection)
     db = client[mongo_database]
     corrections_collection = db[corrections_collection_name]
@@ -496,6 +564,16 @@ def get_corrections_from_mongo():
 
 
 def apply_corrections_to_document(document, corrections_dict):
+    """
+    Applies corrections to the 'text' field of a document based on a corrections dictionary.
+
+    Parameters:
+    - document (dict): The document to apply corrections to.
+    - corrections_dict (dict): Dictionary mapping original terms to corrected terms.
+
+    Returns:
+    - dict or None: If corrections are applied, returns a dictionary with the updated document, else returns None.
+    """
     if 'text' in document:
         # For the general collection
         tokenized_text = tokenize(document['text'])
@@ -514,6 +592,12 @@ def apply_corrections_to_document(document, corrections_dict):
 
 
 def apply_corrections_all_collections_mongo_parallel(corrections_df):
+    """
+    Applies corrections from a DataFrame to all documents in the MongoDB collection in parallel.
+
+    Parameters:
+    - corrections_df (pandas.DataFrame): DataFrame containing 'Original term' and 'Correct term' columns.
+    """
     client = MongoClient(config.mongo_connection)
     db = client[config.mongo_database]
     corrections_dict = dict(zip(corrections_df['Original term'], corrections_df['Correct term']))
@@ -546,6 +630,12 @@ def apply_corrections_all_collections_mongo_parallel(corrections_df):
 
 
 def save_complete_text_to_mongo(document_id):
+    """
+    Saves the complete text of a document to MongoDB.
+
+    Parameters:
+    - document_id (str): The unique identifier of the document.
+    """
     client = MongoClient(config.mongo_connection)
     db = client[config.mongo_database]
     documents_collection = db[config.mongo_collection]
@@ -572,6 +662,12 @@ def save_complete_text_to_mongo(document_id):
 
 
 def get_neighborhood_collections():
+    """
+    Retrieves neighborhood collections from MongoDB.
+
+    Returns:
+    - list: A list of neighborhood collection names.
+    """
     client = MongoClient(config.mongo_connection)
     db = client[config.mongo_database]
     collection_names = db.list_collection_names()
@@ -580,6 +676,15 @@ def get_neighborhood_collections():
 
 
 def get_documents_from_collection(collection_name):
+    """
+    Retrieves documents from a specified MongoDB collection.
+
+    Parameters:
+    - collection_name (str): The name of the MongoDB collection.
+
+    Returns:
+    - dict: A dictionary where keys are document IDs, and values are the corresponding document content.
+    """
     client = MongoClient(config.mongo_connection)
     db = client[config.mongo_database]
     collection = db[collection_name]
@@ -589,6 +694,12 @@ def get_documents_from_collection(collection_name):
 
 
 def get_corrections_from_collection():
+    """
+    Retrieves corrections from the corrections MongoDB collection.
+
+    Returns:
+    - pymongo.collection.Collection: The corrections MongoDB collection.
+    """
     client = MongoClient(config.mongo_connection)
     database = client[config.mongo_database]
     corrections_collection = database[corrections_collection_name]
@@ -596,6 +707,15 @@ def get_corrections_from_collection():
 
 
 def get_complete_text_from_document(document_id):
+    """
+    Retrieves the complete text of a document from MongoDB.
+
+    Parameters:
+    - document_id (str): The unique identifier of the document.
+
+    Returns:
+    - dict: The document content, including the complete text.
+    """
     client = MongoClient(config.mongo_connection)
     db = client[config.mongo_database]
     documents_collection = db[config.mongo_collection]

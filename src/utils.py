@@ -24,9 +24,6 @@ def save_json_data_gzipped(gzipped_file_path, json_content):
     Parameters:
     - gzipped_file_path (Path): Path to the gzipped JSON file to be saved.
     - json_content (dict): JSON content to be saved to the file.
-
-    Returns:
-    - None
     """
     with gzip.open(gzipped_file_path, "wt", encoding="utf-8") as gzipped_file:
         json.dump(json_content, gzipped_file)
@@ -54,9 +51,6 @@ def save_json_data_file(path_json_data_file, json_content):
     Parameters:
     - path_json_data_file (Path): Path to the JSON file to be saved.
     - json_content (dict): JSON content to be saved to the file.
-
-    Returns:
-    - None
     """
     with open(path_json_data_file, 'w') as json_file:
         json.dump(json_content, json_file, indent=4)
