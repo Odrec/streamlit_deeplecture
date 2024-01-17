@@ -31,9 +31,13 @@ def enable_neighborhoods_widgets():
     st.session_state.disabled_neighborhoods = False
 
 
-def disable_complete_text_save_widget():
+def disable_complete_text_widgets():
     st.session_state.disabled_complete_text_save = True
 
 
-def enable_complete_text_save_widget():
+def enable_complete_text_widgets():
     st.session_state.disabled_complete_text_save = False
+
+
+def get_status_complete_text_save_widget():
+    return st.session_state.disabled_complete_text_save

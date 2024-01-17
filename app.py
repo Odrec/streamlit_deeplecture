@@ -3,10 +3,11 @@ import subprocess
 
 import pandas as pd
 import streamlit as st
+from streamlit_quill import st_quill
 
 from htmlTemplates import css
 
-from src import config, data_utils, control_widgets as cw
+from src import config, editor_config, data_utils, control_widgets as cw
 
 
 def next_hood():
@@ -33,10 +34,17 @@ def next_doc():
     Resets the neighborhood index (hoods_count) to zero.
     Resets the document selection box.
     """
+    # Enable widgets related to neighborhoods' navigation and editing
     cw.enable_neighborhoods_widgets()
+
     st.session_state.docs_count = (st.session_state.docs_count + 1) % len(st.session_state.filtered_docs)
     st.session_state.hoods_count = 0
     st.session_state.doc_selectbox = None  # Reset the selectbox
+
+    # Disable widgets related to full text editing if it is enabled
+    if not cw.get_status_complete_text_save_widget():
+        cw.disable_complete_text_widgets()
+        # st.rerun()
 
 
 def previous_doc():
@@ -45,10 +53,17 @@ def previous_doc():
     Resets the neighborhood index (hoods_count) to zero.
     Resets the document selection box.
     """
+    # Enable widgets related to neighborhoods' navigation and editing
     cw.enable_neighborhoods_widgets()
+
     st.session_state.docs_count = (st.session_state.docs_count - 1) % len(st.session_state.filtered_docs)
     st.session_state.hoods_count = 0
     st.session_state.doc_selectbox = None  # Reset the selectbox
+
+    # Disable widgets related to full text editing if it is enabled
+    if not cw.get_status_complete_text_save_widget():
+        cw.disable_complete_text_widgets()
+        # st.rerun()
 
 
 def clear_filters():
@@ -75,7 +90,15 @@ def clear_filters_on_collection_change():
     clear_filters()
 
 
-def open_pdf_button(col9):
+def clear_filters_on_explicit_call():
+    """
+    Calls the 'clear_filters' function to reset filters when called explicitly.
+    """
+    clear_filters()
+    st.rerun()
+
+
+def open_pdf_button():
     """
     Attempts to open the PDF file associated with the currently displayed document.
     """
@@ -86,7 +109,7 @@ def open_pdf_button(col9):
 
     if os.path.exists(pdf_file_path):  # Checks if pdf file exists
         # If the file exists, opens it using the default system application (xdg-open).
-        with col9:
+        with st.session_state.col9:
             subprocess.run(["xdg-open", pdf_file_path])
             st.success(f"Opening PDF: {pdf_file_name}.pdf")
     else:
@@ -94,14 +117,72 @@ def open_pdf_button(col9):
             st.warning(f"PDF file not found: {pdf_file_path}")
 
 
-def display_complete_text(text_area_container, document_id):
+def colorize_word(word, color):
+    return f'<span style="color: {color}; font-weight: bold;">{word}</span>'
+
+
+def count_and_color_text(text_to_display):
+    # Tokenize the text
+    tokenized_text = data_utils.tokenize(text_to_display)
+
+    # Initialize a dictionary to store counts and colored text
+    terms_counts = {}
+    colored_text = text_to_display
+
+    # Flag to control if term is a whole word
+    ww_flag = False
+
+    # Loop through each term in st.session_state.hoods_term
+    for term in st.session_state.hoods_term:
+        count = 0
+
+        # Check if the term is a whole word indicator
+        if term == 'ww':
+            ww_flag = True
+            continue
+
+        # Count the term
+        for word in tokenized_text:
+            if ww_flag:
+                # Check if the term is a whole word and increment count
+                if term.lower() == word.lower():
+                    count += 1
+            else:
+                # Check if the term is a substring of the word and increment count
+                if term.lower() in word.lower():
+                    count += 1
+
+        # Store the count in the terms_counts dictionary
+        terms_counts[term] = count
+
+        # Colorize the term
+        if ww_flag:
+            # Colorize the entire word in the text
+            colored_text = colored_text.replace(f" {term} ", f" {colorize_word(term, 'red')} ")
+            colored_text = colored_text.replace(f" {term}.", f" {colorize_word(term, 'red')}.")
+            colored_text = colored_text.replace(f" {term},", f" {colorize_word(term, 'red')},")
+            colored_text = colored_text.replace(f" {term}!", f" {colorize_word(term, 'red')}!")
+            colored_text = colored_text.replace(f" {term}?", f" {colorize_word(term, 'red')}?")
+            colored_text = colored_text.replace(f" {term}:", f" {colorize_word(term, 'red')}:")
+            colored_text = colored_text.replace(f" {term};", f" {colorize_word(term, 'red')};")
+            colored_text = colored_text.replace(f" ¡{term} ", f" ¡{colorize_word(term, 'red')} ")
+            colored_text = colored_text.replace(f" ¿{term} ", f" ¿{colorize_word(term, 'red')} ")
+            ww_flag = False
+        else:
+            # Colorize the specific sequence within the text
+            colored_text = colored_text.replace(term, colorize_word(term, 'red'))
+
+    return terms_counts, colored_text
+
+
+def display_complete_text(text_area_container):
     """
     Displays the complete text of a specific document within a Streamlit text area.
 
     Parameters:
     - text_area_container (streamlit.container): The container to display the text area.
-    - document_id (str): The unique identifier of the document to retrieve and display.
     """
+    document_id = st.session_state.complete_file_to_display
     # Retrieves the complete text of the specified document using the 'data_utils' module.
     document = data_utils.get_complete_text_from_document(document_id)
 
@@ -110,17 +191,15 @@ def display_complete_text(text_area_container, document_id):
         # Extracts the text to be displayed
         text_to_display = document.get("text", "")
 
-        # Define a unique key for the text_area widget
-        widget_key = f"text_area_{document_id}"
-
         # Displays the complete text within a Streamlit text area.
-        text_area_container.text_area(
-            f"Complete text from document {document_id} on collection **{config.mongo_collection}**.",
-            value=text_to_display,
-            height=300,
-            key=widget_key,
-            disabled=st.session_state.disabled
-        )
+        with text_area_container:
+            terms_counts, colored_text = count_and_color_text(text_to_display)
+            summary_string = "Amount of terms found in the text: "
+            for term, count in terms_counts.items():
+                summary_string += f"{term} {count} "
+            st.write(f"Complete text from document {document_id} on collection **{config.mongo_collection}**. "
+                     f"{summary_string}.")
+            st_quill(colored_text, toolbar=editor_config.toolbar)
     else:
         # If the document does not exist, displays a message indicating that the document was not found.
         # This should never happen
@@ -138,7 +217,7 @@ def display_collection_hoods(text_area_container, selected_collection):
     """
 
     # Checks if there is a chosen collection available before trying to display anything
-    if 'filtered_keys' in st.session_state:
+    if 'filtered_keys' in st.session_state and st.session_state.filtered_keys:
         # Retrieve information about the current document and neighborhood
         current_document_id = st.session_state.filtered_keys[st.session_state.docs_count]
         current_document = st.session_state.filtered_docs[current_document_id]
@@ -174,32 +253,31 @@ def display_collection_hoods(text_area_container, selected_collection):
         average_words_per_page = int(number_of_words) / int(num_pages)
         aprox_page_hood = int(start_index / average_words_per_page)
 
-        # Display neighborhood information within a Streamlit text area
-        text_area_container.text_area(f'Neighborhood {st.session_state.hoods_count} from '
-                                      f'{len(current_document['neighborhoods']) - 1}'
-                                      f' for **{hoods_terms_string}**'
-                                      f' in document **{current_document_id}** '
-                                      f'(SI: {start_index} EI: {end_index} Q%: {quality_percentage: .2g}'
-                                      f' #W: {int(number_of_words)} #Pags. {int(num_pages)}) '
-                                      f'on collection **{selected_collection}**. '
-                                      f'Manually edited (not yet updated in corpus): **{"Yes" if edited else "No"}**. '
-                                      f'Aprox. page # the neighborhood is at: **{aprox_page_hood + 1}**.',
-                                      value=text, height=300, key="hood_text_area",
-                                      disabled=st.session_state.disabled)
-
-        # Display summary information
-        st.write(f'Total documents: {len(st.session_state.filtered_keys)}. Total neighborhoods: '
-                 f'{sum(len(value['neighborhoods']) if isinstance(value['neighborhoods'], list) else 0
-                        for value in st.session_state.filtered_docs.values())}. '
-                 f'Applied filters: {st.session_state.filters}')
+        with text_area_container:
+            st.write(f'Neighborhood {st.session_state.hoods_count} from '
+                     f'{len(current_document['neighborhoods']) - 1}'
+                     f' for **{hoods_terms_string}**'
+                     f' in document **{current_document_id}** '
+                     f'(SI: {start_index} EI: {end_index} Q%: {quality_percentage: .2g}'
+                     f' #W: {int(number_of_words)} #Pags. {int(num_pages)}) '
+                     f'on collection **{selected_collection}**. '
+                     f'Manually edited (not yet updated in corpus): **{"Yes" if edited else "No"}**. '
+                     f'Aprox. page # the neighborhood is at: **{aprox_page_hood + 1}**.')
+            terms_counts, colored_text = count_and_color_text(text)
+            st_quill(colored_text, toolbar=editor_config.toolbar)
+            # Display summary information
+            st.write(f'Total documents: {len(st.session_state.filtered_keys)}. Total neighborhoods: '
+                     f'{sum(len(value['neighborhoods']) if isinstance(value['neighborhoods'], list) else 0
+                            for value in st.session_state.filtered_docs.values())}. '
+                     f'Applied filters: {st.session_state.filters}')
     else:
-        # Display a message if no neighborhoods are found
-        text_area_container.text_area(label="No neighborhoods found.",
-                                      value="",
-                                      height=300)
+        with text_area_container:
+            st.write("No neighborhoods found.")
+            # Display a message if no neighborhoods are found
+            st_quill("", toolbar=editor_config.toolbar)
 
-        # Display summary information when no neighborhoods are found
-        st.write(f'Total documents: 0. Total neighborhoods: 0. Applied filters: {st.session_state.filters}')
+            # Display summary information when no neighborhoods are found
+            st.write(f'Total documents: 0. Total neighborhoods: 0. Applied filters: {st.session_state.filters}')
 
 
 def initialize_session_variables():
@@ -215,7 +293,7 @@ def initialize_session_variables():
     if 'disabled_neighborhoods' not in st.session_state:
         st.session_state.disabled_neighborhoods = False
     if 'disabled_complete_text_save' not in st.session_state:
-        cw.disable_complete_text_save_widget()
+        cw.disable_complete_text_widgets()
 
     # These session variables control which is the current (displayed) document and neighborhood of that document
     if 'docs_count' not in st.session_state:
@@ -230,6 +308,10 @@ def initialize_session_variables():
     # This session variable stores the current selected collection from the selectbox
     if 'selected_collection' not in st.session_state:
         st.session_state.selected_collection = "No Neighborhoods"
+
+    # This session variable stores the current complete file that will be or is displayed in the text area
+    if 'complete_file_to_display' not in st.session_state:
+        st.session_state.complete_file_to_display = None
 
     # This session variable holds a list of the neighborhoods that have been manually edited
     if 'edited_documents' not in st.session_state:
@@ -322,6 +404,9 @@ def collect_neighborhoods_interface_controls(selected_collection):
     # Input fields for generating new neighborhoods
     create_hood_term = col3_sb.text_input("Enter term(s) to collect new neighborhoods (sep ,):",
                                           disabled=st.session_state.disabled_collect)
+    # Make terms lowercase
+    create_hood_term = create_hood_term.lower()
+
     create_hood_size = col4_sb.number_input(f"Enter the size of the new neighborhoods "
                                             f"(default {config.neighborhoods_size}):", value=config.neighborhoods_size,
                                             step=1, disabled=st.session_state.disabled_collect)
@@ -419,7 +504,7 @@ def filters_interface_controls(selected_collection):
 
     # Clear Filters Button
     if col2_sb.button("Clear Filters", disabled=st.session_state.disabled):
-        clear_filters()
+        clear_filters_on_explicit_call()
 
 
 def sidebar_interface_controls():
@@ -468,7 +553,7 @@ def neighborhoods_navigation_interface_controls():
 
     with col5:
         # Only if there's a filtered_keys variable in the session there are documents to populate the selectbox
-        if 'filtered_keys' in st.session_state:
+        if 'filtered_keys' in st.session_state and st.session_state.filtered_keys:
             selectbox_doc = st.selectbox(label='Choose a document to navigate to',
                                          options=st.session_state.filtered_keys, key='doc_selectbox', index=None,
                                          disabled=st.session_state.disabled)
@@ -525,13 +610,14 @@ def complete_text_interface_controls(text_area_container):
     - text_area_container (streamlit.container): The container to display the text area.
     """
     # Check if there are documents from a collection present
-    if 'filtered_keys' in st.session_state:
+    if 'filtered_keys' in st.session_state and st.session_state.filtered_keys:
+        # cw.enable_neighborhoods_widgets()
         # Button to display the entire text of the current document
-        file_to_display = st.session_state.filtered_keys[st.session_state.docs_count]
-        display_complete_text_button = st.button(f"Display text from {file_to_display}",
+        st.session_state.complete_file_to_display = st.session_state.filtered_keys[st.session_state.docs_count]
+        display_complete_text_button = st.button(f"Display text from {st.session_state.complete_file_to_display}",
                                                  disabled=st.session_state.disabled)
         if display_complete_text_button or st.session_state.disabled_neighborhoods:
-            display_complete_text(text_area_container, file_to_display)
+            display_complete_text(text_area_container)
 
             # Disabling, enabling of buttons and rerun should only be done
             # when the button for full text display is pressed
@@ -539,13 +625,18 @@ def complete_text_interface_controls(text_area_container):
                 # Disable widgets for control of neighborhoods
                 cw.disable_neighborhoods_widgets()
                 # Enable widgets that control the complete text
-                cw.enable_complete_text_save_widget()
-                st.rerun()
+                cw.enable_complete_text_widgets()
 
-        if st.button(f"Save Text from {file_to_display}",
-                     disabled=st.session_state.disabled_complete_text_save):
-            # Call the save function
-            data_utils.save_complete_text_to_mongo(file_to_display)
+        st.button(f"Save Text from {st.session_state.complete_file_to_display}",
+                  disabled=st.session_state.disabled_complete_text_save,
+                  on_click=data_utils.save_complete_text_to_mongo)
+
+        # if save_complete_text_button:
+        # Call the save function
+        #    data_utils.save_complete_text_to_mongo(file_to_display)
+    else:
+        cw.disable_complete_text_widgets()
+        cw.disable_neighborhoods_widgets()
 
 
 def neighborhoods_editing_interface_controls(selected_collection):
@@ -570,7 +661,7 @@ def neighborhoods_editing_interface_controls(selected_collection):
         st.button("Save changes in neighborhood", disabled=st.session_state.disabled_neighborhoods,
                   on_click=data_utils.update_neighborhood_in_collection)
 
-        if 'filtered_keys' in st.session_state:
+        if 'filtered_keys' in st.session_state and st.session_state.filtered_keys:
             if 'updated' in st.session_state:
                 if st.session_state.updated:
                     st.success("Corpus updated successfully.")
@@ -633,20 +724,20 @@ def edition_interface(selected_collection):
     """
     neighborhoods_navigation_interface_controls()
 
-    text_area_container = st.empty()
+    text_area_container = st.container()
     # If the textarea is not showing a complete text right now or there is a neighborhood collection chosen yet,
     # then show the neighborhoods in the textarea
     if not st.session_state.disabled_neighborhoods or 'filtered_keys' not in st.session_state:
         cw.enable_all_widgets()
         display_collection_hoods(text_area_container, selected_collection)
-        cw.disable_complete_text_save_widget()
+        cw.disable_complete_text_widgets()
 
-    st.session_state.col6, col7, col8, st.session_state.col9 = st.columns([1, 1, 1, 1])
+    st.session_state.col6, col7, st.session_state.col8, st.session_state.col9 = st.columns([1, 1, 1, 1])
 
     with col7:
         general_corrections_interface_controls()
 
-    with col8:
+    with st.session_state.col8:
         complete_text_interface_controls(text_area_container)
 
     # Display and control the interface controls for the editing neighborhoods
@@ -654,7 +745,7 @@ def edition_interface(selected_collection):
 
     with st.session_state.col9:
         # Add a button to open the PDF
-        if 'filtered_keys' in st.session_state:
+        if 'filtered_keys' in st.session_state and st.session_state.filtered_keys:
             st.button(f"Open PDF for file {st.session_state.filtered_keys[st.session_state.docs_count]}",
                       on_click=open_pdf_button, disabled=st.session_state.disabled)
 

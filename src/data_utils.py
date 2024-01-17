@@ -629,13 +629,11 @@ def apply_corrections_all_collections_mongo_parallel(corrections_df):
                                          all_collections=True, info=False)
 
 
-def save_complete_text_to_mongo(document_id):
+def save_complete_text_to_mongo():
     """
     Saves the complete text of a document to MongoDB.
-
-    Parameters:
-    - document_id (str): The unique identifier of the document.
     """
+    document_id = st.session_state.complete_file_to_display
     client = MongoClient(config.mongo_connection)
     db = client[config.mongo_database]
     documents_collection = db[config.mongo_collection]
@@ -651,14 +649,17 @@ def save_complete_text_to_mongo(document_id):
             {"_id": document_id},
             {"$set": {"text": text_to_save}}
         )
-        st.success(f"Text successfully saved for document {document_id}.")
+        with st.session_state.col8:
+            st.success(f"Text successfully saved for document {document_id}.")
     else:
-        st.error(f"Document {document_id} not found in collection {config.mongo_collection}.")
+        with st.session_state.col8:
+            st.error(f"Document {document_id} not found in collection {config.mongo_collection}.")
 
     # Recollect and insert the neighborhoods of the saved document
-    st.info('Recollecting neighborhoods from edited documents.')
-    collect_neighborhoods_mongo_parallel(sequences_list=[], size=0, document_ids=[document_id], all_collections=True)
-    st.success('Finished recollecting neighborhoods successfully.')
+    with st.session_state.col8:
+        st.info('Recollecting neighborhoods from edited documents.')
+        collect_neighborhoods_mongo_parallel(sequences_list=[], size=0, document_ids=[document_id], all_collections=True)
+        st.success('Finished recollecting neighborhoods successfully.')
 
 
 def get_neighborhood_collections():
