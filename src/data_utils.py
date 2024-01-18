@@ -335,7 +335,7 @@ def update_neighborhood_in_collection():
     collection_name = st.session_state.selected_collection
     current_document_id = st.session_state.filtered_keys[st.session_state.docs_count]
     current_neighborhood_index = st.session_state.hoods_count
-    edited_text = st.session_state.hood_text_area
+    edited_text = st.session_state.editor_content
 
     # Check if the text has been edited
     if (edited_text !=
@@ -638,7 +638,7 @@ def save_complete_text_to_mongo():
     db = client[config.mongo_database]
     documents_collection = db[config.mongo_collection]
 
-    text_to_save = st.session_state[f"text_area_{document_id}"]
+    text_to_save = st.session_state.editor_content
 
     # Fetch the document from MongoDB
     document = documents_collection.find_one({"_id": document_id})

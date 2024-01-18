@@ -44,7 +44,6 @@ def next_doc():
     # Disable widgets related to full text editing if it is enabled
     if not cw.get_status_complete_text_save_widget():
         cw.disable_complete_text_widgets()
-        # st.rerun()
 
 
 def previous_doc():
@@ -63,7 +62,6 @@ def previous_doc():
     # Disable widgets related to full text editing if it is enabled
     if not cw.get_status_complete_text_save_widget():
         cw.disable_complete_text_widgets()
-        # st.rerun()
 
 
 def clear_filters():
@@ -81,6 +79,8 @@ def clear_filters():
         st.session_state.filtered_keys = list(st.session_state.filtered_docs.keys())
         st.session_state.filters = None
         st.session_state.filter_by_term = ""
+        if st.session_state.disabled_neighborhoods:
+            cw.enable_neighborhoods_widgets()
 
 
 def clear_filters_on_collection_change():
@@ -132,8 +132,13 @@ def count_and_color_text(text_to_display):
     # Flag to control if term is a whole word
     ww_flag = False
 
+    # Get neighborhoods terms and filter term, if any, together
+    all_terms = st.session_state.hoods_term.copy()
+    if st.session_state.filter_by_term != "":
+        all_terms.append(st.session_state.filter_by_term)
+
     # Loop through each term in st.session_state.hoods_term
-    for term in st.session_state.hoods_term:
+    for term in all_terms:
         count = 0
 
         # Check if the term is a whole word indicator
@@ -155,22 +160,28 @@ def count_and_color_text(text_to_display):
         # Store the count in the terms_counts dictionary
         terms_counts[term] = count
 
-        # Colorize the term
+        # Colorize the term. Different colors if the term is of the neighborhoods or a filter term
+        if term == st.session_state.filter_by_term:
+            color = 'blue'
+        else:
+            color = 'red'
         if ww_flag:
             # Colorize the entire word in the text
-            colored_text = colored_text.replace(f" {term} ", f" {colorize_word(term, 'red')} ")
-            colored_text = colored_text.replace(f" {term}.", f" {colorize_word(term, 'red')}.")
-            colored_text = colored_text.replace(f" {term},", f" {colorize_word(term, 'red')},")
-            colored_text = colored_text.replace(f" {term}!", f" {colorize_word(term, 'red')}!")
-            colored_text = colored_text.replace(f" {term}?", f" {colorize_word(term, 'red')}?")
-            colored_text = colored_text.replace(f" {term}:", f" {colorize_word(term, 'red')}:")
-            colored_text = colored_text.replace(f" {term};", f" {colorize_word(term, 'red')};")
-            colored_text = colored_text.replace(f" ¡{term} ", f" ¡{colorize_word(term, 'red')} ")
-            colored_text = colored_text.replace(f" ¿{term} ", f" ¿{colorize_word(term, 'red')} ")
+            colored_text = colored_text.replace(f" {term} ", f" {colorize_word(term, color)} ")
+            colored_text = colored_text.replace(f" {term}.", f" {colorize_word(term, color)}.")
+            colored_text = colored_text.replace(f" {term},", f" {colorize_word(term, color)},")
+            colored_text = colored_text.replace(f" {term}!", f" {colorize_word(term, color)}!")
+            colored_text = colored_text.replace(f" {term}?", f" {colorize_word(term, color)}?")
+            colored_text = colored_text.replace(f" {term}:", f" {colorize_word(term, color)}:")
+            colored_text = colored_text.replace(f" {term};", f" {colorize_word(term, color)};")
+            colored_text = colored_text.replace(f" ¡{term} ", f" ¡{colorize_word(term, color)} ")
+            colored_text = colored_text.replace(f" ¿{term} ", f" ¿{colorize_word(term, color)} ")
+            colored_text = colored_text.replace(f" ({term} ", f" ¿{colorize_word(term, color)} ")
+            colored_text = colored_text.replace(f" {term}) ", f" ¿{colorize_word(term, color)} ")
             ww_flag = False
         else:
             # Colorize the specific sequence within the text
-            colored_text = colored_text.replace(term, colorize_word(term, 'red'))
+            colored_text = colored_text.replace(term, colorize_word(term, color))
 
     return terms_counts, colored_text
 
@@ -199,7 +210,7 @@ def display_complete_text(text_area_container):
                 summary_string += f"{term} {count} "
             st.write(f"Complete text from document {document_id} on collection **{config.mongo_collection}**. "
                      f"{summary_string}.")
-            st_quill(colored_text, toolbar=editor_config.toolbar)
+            st.session_state.editor_content = st_quill(colored_text, toolbar=editor_config.toolbar)
     else:
         # If the document does not exist, displays a message indicating that the document was not found.
         # This should never happen
@@ -264,7 +275,7 @@ def display_collection_hoods(text_area_container, selected_collection):
                      f'Manually edited (not yet updated in corpus): **{"Yes" if edited else "No"}**. '
                      f'Aprox. page # the neighborhood is at: **{aprox_page_hood + 1}**.')
             terms_counts, colored_text = count_and_color_text(text)
-            st_quill(colored_text, toolbar=editor_config.toolbar)
+            st.session_state.editor_content = st_quill(colored_text, toolbar=editor_config.toolbar)
             # Display summary information
             st.write(f'Total documents: {len(st.session_state.filtered_keys)}. Total neighborhoods: '
                      f'{sum(len(value['neighborhoods']) if isinstance(value['neighborhoods'], list) else 0
@@ -312,6 +323,10 @@ def initialize_session_variables():
     # This session variable stores the current complete file that will be or is displayed in the text area
     if 'complete_file_to_display' not in st.session_state:
         st.session_state.complete_file_to_display = None
+
+    # Variable that holds the current editor content
+    if 'editor_content' not in st.session_state:
+        st.session_state.editor_content = ""
 
     # This session variable holds a list of the neighborhoods that have been manually edited
     if 'edited_documents' not in st.session_state:
@@ -493,7 +508,7 @@ def filters_interface_controls(selected_collection):
                                                                    disabled=st.session_state.disabled)
 
     # Input fields for original and corrected terms
-    st.session_state.filter_by_term = st.text_input("Filter by term:", disabled=st.session_state.disabled)
+    st.text_input("Filter by term:", disabled=st.session_state.disabled, key='filter_by_term')
 
     # Columns to organize filters buttons
     col1_sb, col2_sb = st.columns([1, 1])
