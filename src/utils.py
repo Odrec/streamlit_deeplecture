@@ -1,5 +1,32 @@
 import json
 import gzip
+import unidecode
+
+
+def remove_accents(text):
+    """
+        Remove accents from characters in the text, keeping 'ñ' and 'Ñ' intact.
+
+        Parameters:
+        - text (str): Input text.
+
+        Returns:
+        - str: Text with accents removed.
+    """
+    return ''.join([char if char in ['ñ', 'Ñ'] else unidecode.unidecode(char) for char in text])
+
+
+def remove_non_letters(text):
+    """
+        Remove non-letter characters from the text.
+
+        Parameters:
+        - text (str): Input text.
+
+        Returns:
+        - str: Text with non-letter characters removed.
+    """
+    return ''.join(char for char in text if char.isalpha() or char.isspace() or char == 'ñ' or char == 'Ñ')
 
 
 def open_json_data_gzipped(gzipped_file_path) -> dict:

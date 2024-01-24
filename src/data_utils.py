@@ -79,9 +79,10 @@ def apply_filters_to_neighborhoods():
                 (not st.session_state.selected_periodo or metadata.get('periodo') in st.session_state.selected_periodo):
             st.session_state.filtered_docs[doc_id] = doc
 
-    st.session_state.filters = ""
+    st.session_state.filters = {}
 
     # Apply term filter do the documents
+    # TODO: manage whole words and multiple filter words
     if st.session_state.filter_by_term != "":
         filtered_by_term_dict = {}
         for doc_id, doc in st.session_state.filtered_docs.items():
@@ -95,19 +96,18 @@ def apply_filters_to_neighborhoods():
                     filtered_by_term_dict[doc_id]['neighborhoods'].append(hood)
 
         st.session_state.filtered_docs = filtered_by_term_dict
-        st.session_state.filters += f"**Term** - {st.session_state.filter_by_term} "
+        st.session_state.filters['Terms'] = st.session_state.filter_by_term.split(',')
 
     st.session_state.filtered_keys = list(st.session_state.filtered_docs.keys())
     st.session_state.docs_count = 0
     st.session_state.hoods_count = 0
 
     if 'selected_periodo' in st.session_state and st.session_state.selected_periodo:
-        st.session_state.filters += f"**Periodos** - {' '.join(st.session_state.selected_periodo)} "
+        st.session_state.filters['Periodos'] = st.session_state.selected_periodo
     if 'selected_entidad_territorial' in st.session_state and st.session_state.selected_entidad_territorial:
-        st.session_state.filters += (f"**Entidad Territorial** - "
-                                     f"{' '.join(st.session_state.selected_entidad_territorial)} ")
+        st.session_state.filters['Entidad Territorial'] = st.session_state.selected_entidad_territorial
     if 'selected_nacionalidad' in st.session_state and st.session_state.selected_nacionalidad:
-        st.session_state.filters += f"**Nacionalidad** - " + ' '.join(st.session_state.selected_nacionalidad)
+        st.session_state.filters['Nacionalidad'] = st.session_state.selected_nacionalidad
 
 
 def extract_neighborhoods(key, value, sequences_list, size):
@@ -201,6 +201,9 @@ def insert_neighborhoods_to_mongo(neighborhoods, neighborhood_collection_name, d
                     }
                 })
     else:
+        # Drop the existing collection if it exists for replacement
+        neighborhood_coll.drop()
+
         # Insert neighborhoods into the collection
         for key in tqdm(neighborhoods, desc="Inserting Neighborhoods"):
             result = neighborhoods[key]
@@ -246,7 +249,7 @@ def collect_neighborhoods_mongo_parallel(sequences_list, size, document_ids=None
 
         # Iterate over collections
         for collection_name in all_collections:
-            if collection_name.startswith('neighborhoods'):
+            if collection_name.endswith('neighborhoods'):
                 neighborhoods_collection = db[collection_name]
 
                 # Extract sequences_list and size from one of the documents
@@ -271,7 +274,7 @@ def collect_neighborhoods_mongo_parallel(sequences_list, size, document_ids=None
              for seq in sequences_list])
 
         # Create a new collection for neighborhoods
-        collections_names = [{'collection_name': f'neighborhoods_{collection_suffix}'}]
+        collections_names = [{'collection_name': f'{collection_suffix}_neighborhoods'}]
 
     for collection_info in collections_names:
         neighborhood_collection_name = collection_info['collection_name']
@@ -288,9 +291,12 @@ def collect_neighborhoods_mongo_parallel(sequences_list, size, document_ids=None
                 if info:
                     st.info(f"Collecting neighborhoods for document {document_id} "
                             f"on collection {neighborhood_collection_name}...")
+                    print(f"Collecting neighborhoods for document {document_id} "
+                          f"on collection {neighborhood_collection_name}...")
         else:
             documents_content = list(documents_collection.find({}, {'_id': 1, 'text': 1, 'metadata': 1}))
             st.info("Collecting neighborhoods...")
+            print("Collecting neighborhoods...")
 
         current_sequences_list = [seq.strip() for seq in current_sequences_list]
         # Parallelize processing using ProcessPoolExecutor
@@ -312,12 +318,15 @@ def collect_neighborhoods_mongo_parallel(sequences_list, size, document_ids=None
                 }
         if info:
             st.success("Finished collecting neighborhoods.")
+            print("Finished collecting neighborhoods.")
 
             st.info(f"Inserting neighborhoods to the collection {neighborhood_collection_name}.")
+            print(f"Inserting neighborhoods to the collection {neighborhood_collection_name}.")
         # Insert neighborhoods into MongoDB collection
         insert_neighborhoods_to_mongo(neighborhoods, neighborhood_collection_name, document_ids)
         if info:
             st.success("Finished inserting neighborhoods.")
+            print("Finished inserting neighborhoods.")
         end_time = time.time()  # Record end time
         elapsed_time = end_time - start_time
         print(f"Total time taken: {elapsed_time} seconds.")
@@ -407,7 +416,7 @@ def save_edited_neighborhoods_to_corpus_mongo(neighborhoods_collection_name):
     Save edited neighborhoods to the corpus collection in MongoDB.
 
     Parameters:
-    - neighborhoods_collection_name (str): Name of the neighborhoods collection.
+    - neighborhoods_collection_name (str): Name of the neighborhoods' collection.
     """
     # Connect to MongoDB
     client = MongoClient(config.mongo_connection)
@@ -473,7 +482,7 @@ def find_edited_neighborhoods():
 
     # Iterate over collections
     for collection_name in all_collections:
-        if collection_name.startswith('neighborhoods'):
+        if collection_name.endswith('neighborhoods'):
             neighborhoods_collection = db[collection_name]
 
             # Search for neighborhoods with 'edited' True
@@ -565,7 +574,7 @@ def get_corrections_from_mongo():
 
 def apply_corrections_to_document(document, corrections_dict):
     """
-    Applies corrections to the 'text' field of a document based on a corrections dictionary.
+    Applies corrections to the 'text' field of a document based on a corrections' dictionary.
 
     Parameters:
     - document (dict): The document to apply corrections to.
@@ -602,27 +611,30 @@ def apply_corrections_all_collections_mongo_parallel(corrections_df):
     db = client[config.mongo_database]
     corrections_dict = dict(zip(corrections_df['Original term'], corrections_df['Correct term']))
 
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        collection = db[config.mongo_collection]
+    collection = db[config.mongo_collection]
 
-        futures = []
-        documents_ids = []
+    st.info(f"Applying corrections to collection {config.mongo_collection}. Please wait, this might take a while.")
+    print(f"Applying corrections to collection {config.mongo_collection}. Please wait, this might take a while.")
 
-        st.info(f"Applying corrections to collection {config.mongo_collection}. Please wait, this might take a while.")
+    futures = []
+    documents_ids = []
 
-        for document in collection.find():
-            future = executor.submit(apply_corrections_to_document, document, corrections_dict)
-            futures.append(future)
+    executor = concurrent.futures.ProcessPoolExecutor()
 
-        for future in concurrent.futures.as_completed(futures):
-            result = future.result()
-            if result is not None:
-                collection.update_one({'_id': result['_id']}, {'$set': result})
-                documents_ids.append(result['_id'])
+    for document in collection.find():
+        future = executor.submit(apply_corrections_to_document, document, corrections_dict)
+        futures.append(future)
 
-        st.info(f"Corrections applied to collection {config.mongo_collection}.")
+    for i, future in enumerate(concurrent.futures.as_completed(futures)):
+        result = future.result()
+        if result is not None:
+            collection.update_one({'_id': result['_id']}, {'$set': result})
+            documents_ids.append(result['_id'])
 
-        st.success(f"Finished applying all corrections.")
+    print(f"Finished applying all corrections.")
+    st.info(f"Corrections applied to collection {config.mongo_collection}.")
+
+    st.success(f"Finished applying all corrections.")
 
     print(documents_ids)
     collect_neighborhoods_mongo_parallel(sequences_list=[], size=0, document_ids=documents_ids,
@@ -672,7 +684,7 @@ def get_neighborhood_collections():
     client = MongoClient(config.mongo_connection)
     db = client[config.mongo_database]
     collection_names = db.list_collection_names()
-    neighborhood_collections = [name for name in collection_names if name.startswith("neighborhoods_")]
+    neighborhood_collections = [name for name in collection_names if name.endswith("_neighborhoods")]
     return neighborhood_collections
 
 

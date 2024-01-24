@@ -11,4 +11,6 @@ mongo_collection = 'corrected_all_text_data'
 corrections_collection_name = 'corrections'
 
 neighborhoods_size = 100
+co_occurrence_neighborhood_size = 11
+
 

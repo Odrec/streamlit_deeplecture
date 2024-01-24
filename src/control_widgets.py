@@ -1,16 +1,30 @@
 import streamlit as st
 
 
+def disable_all_widgets_except_clear():
+    st.session_state.disabled = True
+    st.session_state.disabled_collect = True
+    st.session_state.disabled_neighborhoods = True
+
+
+def enable_all_widgets_except_clear():
+    st.session_state.disabled = False
+    st.session_state.disabled_collect = False
+    st.session_state.disabled_neighborhoods = False
+
+
 def disable_all_widgets():
     st.session_state.disabled = True
     st.session_state.disabled_collect = True
     st.session_state.disabled_neighborhoods = True
+    st.session_state.disabled_clear = True
 
 
 def enable_all_widgets():
     st.session_state.disabled = False
     st.session_state.disabled_collect = False
     st.session_state.disabled_neighborhoods = False
+    st.session_state.disabled_clear = False
 
 
 def disable_widgets_without_collect():
